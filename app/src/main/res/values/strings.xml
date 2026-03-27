@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">FC_007</string>
+    <string name="accelerometer_unavailable">Accelerometer not available on this device.</string>
+    <string name="ball_content_description">Ball controlled by device tilt</string>
 </resources>

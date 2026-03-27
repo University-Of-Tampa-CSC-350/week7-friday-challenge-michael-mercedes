@@ -8,12 +8,38 @@
     tools:context=".MainActivity">
 
     <TextView
-        android:layout_width="wrap_content"
+        android:id="@+id/sensor_unavailable_message"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="Hello World!"
-        app:layout_constraintBottom_toBottomOf="parent"
+        android:gravity="center"
+        android:padding="16dp"
+        android:text="@string/accelerometer_unavailable"
+        android:textColor="#C62828"
+        android:visibility="gone"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <FrameLayout
+        android:id="@+id/movement_area"
+        android:layout_width="0dp"
+        android:layout_height="0dp"
+        android:layout_margin="16dp"
+        android:background="@drawable/movement_area_border"
+        android:clipChildren="true"
+        android:clipToPadding="true"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@id/sensor_unavailable_message">
+
+        <View
+            android:id="@+id/ball"
+            android:layout_width="@dimen/ball_size"
+            android:layout_height="@dimen/ball_size"
+            android:layout_gravity="center"
+            android:background="@drawable/ball"
+            android:contentDescription="@string/ball_content_description" />
+    </FrameLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>
