@@ -138,6 +138,7 @@
         android:background="@drawable/movement_area_border"
         android:clipChildren="true"
         android:clipToPadding="true"
+        android:padding="6dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"

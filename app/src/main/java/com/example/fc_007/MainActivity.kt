@@ -174,8 +174,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun updateMovementBounds() {
-        val wArea = movementArea.width
-        val hArea = movementArea.height
+        val wArea =
+            movementArea.width - movementArea.paddingLeft - movementArea.paddingRight
+        val hArea =
+            movementArea.height - movementArea.paddingTop - movementArea.paddingBottom
         val wBall = ball.width
         val hBall = ball.height
         if (wArea <= 0 || hArea <= 0 || wBall <= 0 || hBall <= 0) return
