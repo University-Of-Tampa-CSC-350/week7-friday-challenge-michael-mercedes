@@ -9,11 +9,13 @@ import android.os.Bundle
 import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.SeekBar
 import android.widget.TextView
 import androidx.activity.enableEdgeToEdge
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import kotlin.math.roundToInt
 
 class MainActivity : AppCompatActivity(), SensorEventListener {
 
@@ -23,6 +25,11 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private lateinit var movementArea: FrameLayout
     private lateinit var ball: View
     private lateinit var sensorUnavailable: TextView
+    private lateinit var controlPanel: View
+    private lateinit var textAccelX: TextView
+    private lateinit var textAccelY: TextView
+    private lateinit var seekSensitivity: SeekBar
+    private lateinit var textSensitivityValue: TextView
 
     /** Max |translationX| so the ball stays inside [movementArea]. */
     private var maxOffsetX = 0f
@@ -35,13 +42,23 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     /** Filtered sensor values to reduce jitter and ensure smooth movement. */
     private var filteredAx = 0f
     private var filteredAy = 0f
-    private val alpha = 0.15f // Smoothing factor: lower is smoother, higher is more responsive
+    private val alpha = 0.15f
 
-    /** Scaling factor for movement sensitivity. */
-    private val sensitivity = 2.5f
+    /** Movement gain; user-adjustable via [seekSensitivity] (bonus). */
+    private var sensitivity = DEFAULT_SENSITIVITY
 
     private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
         updateMovementBounds()
+    }
+
+    private val sensitivitySeekListener = object : SeekBar.OnSeekBarChangeListener {
+        override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+            sensitivity = progressToSensitivity(progress)
+            updateSensitivityLabel()
+        }
+
+        override fun onStartTrackingTouch(seekBar: SeekBar?) {}
+        override fun onStopTrackingTouch(seekBar: SeekBar?) {}
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,33 +74,57 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         movementArea = findViewById(R.id.movement_area)
         ball = findViewById(R.id.ball)
         sensorUnavailable = findViewById(R.id.sensor_unavailable_message)
+        controlPanel = findViewById(R.id.control_panel)
+        textAccelX = findViewById(R.id.text_accel_x)
+        textAccelY = findViewById(R.id.text_accel_y)
+        seekSensitivity = findViewById(R.id.seek_sensitivity)
+        textSensitivityValue = findViewById(R.id.text_sensitivity_value)
 
-        // Initialize SensorManager and check for Accelerometer availability
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
         if (accelerometer == null) {
             handleMissingSensor()
         } else {
+            setupBonusControls()
             movementArea.addOnLayoutChangeListener(layoutListener)
             movementArea.post { updateMovementBounds() }
         }
     }
 
-    /**
-     * Fallback behavior when the required accelerometer sensor is not found.
-     */
+    private fun setupBonusControls() {
+        seekSensitivity.max = SEEK_MAX
+        seekSensitivity.progress = sensitivityToProgress(sensitivity)
+        updateSensitivityLabel()
+        seekSensitivity.setOnSeekBarChangeListener(sensitivitySeekListener)
+        textAccelX.text = getString(R.string.accel_x_fmt, 0f)
+        textAccelY.text = getString(R.string.accel_y_fmt, 0f)
+    }
+
+    private fun updateSensitivityLabel() {
+        textSensitivityValue.text = getString(R.string.sensitivity_value_fmt, sensitivity)
+    }
+
+    private fun progressToSensitivity(progress: Int): Float {
+        val t = progress.coerceIn(0, SEEK_MAX) / SEEK_MAX.toFloat()
+        return SENS_MIN + (SENS_MAX - SENS_MIN) * t
+    }
+
+    private fun sensitivityToProgress(s: Float): Int {
+        val t = ((s - SENS_MIN) / (SENS_MAX - SENS_MIN)).coerceIn(0f, 1f)
+        return (t * SEEK_MAX).roundToInt().coerceIn(0, SEEK_MAX)
+    }
+
     private fun handleMissingSensor() {
         Log.e("MainActivity", "Accelerometer sensor not found on this device.")
         sensorUnavailable.visibility = View.VISIBLE
-        // Optionally hide the movement area or ball to indicate the feature is disabled
+        controlPanel.visibility = View.GONE
         ball.visibility = View.GONE
-        movementArea.alpha = 0.5f // Dim the area to show it's inactive
+        movementArea.alpha = 0.5f
     }
 
     override fun onResume() {
         super.onResume()
-        // Prevent crashes by only registering if the sensor exists
         accelerometer?.let { sensor ->
             val supported = sensorManager.registerListener(
                 this,
@@ -99,19 +140,23 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
 
     override fun onPause() {
         super.onPause()
-        // Always unregister to save battery and prevent leaks, even if accelerometer is null
         sensorManager.unregisterListener(this)
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        // Defensive check for sensor type and event data
-        if (event?.sensor?.type != Sensor.TYPE_ACCELEROMETER || event.values.size < 2) return
+        if (event?.sensor?.type != Sensor.TYPE_ACCELEROMETER || event.values.size < 3) return
 
-        // Apply a simple low-pass filter to smooth the sensor data (Reduced Jitter)
-        filteredAx = filteredAx + alpha * (event.values[0] - filteredAx)
-        filteredAy = filteredAy + alpha * (event.values[1] - filteredAy)
+        val ax = event.values[0]
+        val ay = event.values[1]
+        val az = event.values[2]
+        if (!ax.isFinite() || !ay.isFinite() || !az.isFinite()) return
 
-        // Map tilt to incremental position change (Real-Time Continuous Movement)
+        filteredAx = filteredAx + alpha * (ax - filteredAx)
+        filteredAy = filteredAy + alpha * (ay - filteredAy)
+
+        textAccelX.text = getString(R.string.accel_x_fmt, filteredAx)
+        textAccelY.text = getString(R.string.accel_y_fmt, filteredAy)
+
         ballX -= filteredAx * sensitivity
         ballY -= filteredAy * sensitivity
 
@@ -119,18 +164,14 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             updateMovementBounds()
         }
 
-        // Apply boundaries to prevent the ball from moving off-screen
         ballX = ballX.coerceIn(-maxOffsetX, maxOffsetX)
         ballY = ballY.coerceIn(-maxOffsetY, maxOffsetY)
 
-        // Update UI immediately
         ball.translationX = ballX
         ball.translationY = ballY
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-        // Not needed for this implementation but required by SensorEventListener
-    }
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
 
     private fun updateMovementBounds() {
         val wArea = movementArea.width
@@ -145,10 +186,16 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (maxOffsetX < 0f) maxOffsetX = 0f
         if (maxOffsetY < 0f) maxOffsetY = 0f
 
-        // Re-clamp position if bounds change (e.g. screen rotation or layout changes)
         ballX = ballX.coerceIn(-maxOffsetX, maxOffsetX)
         ballY = ballY.coerceIn(-maxOffsetY, maxOffsetY)
         ball.translationX = ballX
         ball.translationY = ballY
+    }
+
+    companion object {
+        private const val SENS_MIN = 0.5f
+        private const val SENS_MAX = 6f
+        private const val SEEK_MAX = 100
+        private const val DEFAULT_SENSITIVITY = 2.5f
     }
 }

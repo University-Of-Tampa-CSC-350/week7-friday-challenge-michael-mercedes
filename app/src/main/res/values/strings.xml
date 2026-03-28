@@ -2,4 +2,10 @@
     <string name="app_name">FC_007</string>
     <string name="accelerometer_unavailable">Accelerometer not available on this device.</string>
     <string name="ball_content_description">Ball controlled by device tilt</string>
+    <string name="panel_title">Tilt lab</string>
+    <string name="panel_subtitle">Tilt the device to move the ball — adjust sensitivity below</string>
+    <string name="accel_x_fmt">X: %1$.2f m/s²</string>
+    <string name="accel_y_fmt">Y: %1$.2f m/s²</string>
+    <string name="sensitivity_label">Sensitivity</string>
+    <string name="sensitivity_value_fmt">%1$.1f×</string>
 </resources>
