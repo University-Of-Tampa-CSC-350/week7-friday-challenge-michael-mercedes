@@ -6,6 +6,7 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Bundle
+import android.util.Log
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.TextView
@@ -27,8 +28,17 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
     private var maxOffsetX = 0f
     private var maxOffsetY = 0f
 
-    /** Scales small raw accelerometer values (~±10) into on-screen movement. */
-    private val movementScale = 45f
+    /** Current ball position offsets from the center. */
+    private var ballX = 0f
+    private var ballY = 0f
+
+    /** Filtered sensor values to reduce jitter and ensure smooth movement. */
+    private var filteredAx = 0f
+    private var filteredAy = 0f
+    private val alpha = 0.15f // Smoothing factor: lower is smoother, higher is more responsive
+
+    /** Scaling factor for movement sensitivity. */
+    private val sensitivity = 2.5f
 
     private val layoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
         updateMovementBounds()
@@ -44,61 +54,83 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
             insets
         }
 
-        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-
         movementArea = findViewById(R.id.movement_area)
         ball = findViewById(R.id.ball)
         sensorUnavailable = findViewById(R.id.sensor_unavailable_message)
 
-        if (accelerometer == null) {
-            sensorUnavailable.visibility = View.VISIBLE
-        }
+        // Initialize SensorManager and check for Accelerometer availability
+        sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
-        movementArea.addOnLayoutChangeListener(layoutListener)
-        movementArea.post { updateMovementBounds() }
+        if (accelerometer == null) {
+            handleMissingSensor()
+        } else {
+            movementArea.addOnLayoutChangeListener(layoutListener)
+            movementArea.post { updateMovementBounds() }
+        }
+    }
+
+    /**
+     * Fallback behavior when the required accelerometer sensor is not found.
+     */
+    private fun handleMissingSensor() {
+        Log.e("MainActivity", "Accelerometer sensor not found on this device.")
+        sensorUnavailable.visibility = View.VISIBLE
+        // Optionally hide the movement area or ball to indicate the feature is disabled
+        ball.visibility = View.GONE
+        movementArea.alpha = 0.5f // Dim the area to show it's inactive
     }
 
     override fun onResume() {
         super.onResume()
+        // Prevent crashes by only registering if the sensor exists
         accelerometer?.let { sensor ->
-            sensorManager.registerListener(
+            val supported = sensorManager.registerListener(
                 this,
                 sensor,
                 SensorManager.SENSOR_DELAY_GAME
             )
+            if (!supported) {
+                Log.e("MainActivity", "Failed to register accelerometer listener.")
+                handleMissingSensor()
+            }
         }
     }
 
     override fun onPause() {
         super.onPause()
+        // Always unregister to save battery and prevent leaks, even if accelerometer is null
         sensorManager.unregisterListener(this)
     }
 
     override fun onSensorChanged(event: SensorEvent?) {
-        if (event?.sensor?.type != Sensor.TYPE_ACCELEROMETER) return
+        // Defensive check for sensor type and event data
+        if (event?.sensor?.type != Sensor.TYPE_ACCELEROMETER || event.values.size < 2) return
 
-        val ax = event.values[0]
-        val ay = event.values[1]
-        @Suppress("UNUSED_VARIABLE")
-        val az = event.values[2]
+        // Apply a simple low-pass filter to smooth the sensor data (Reduced Jitter)
+        filteredAx = filteredAx + alpha * (event.values[0] - filteredAx)
+        filteredAy = filteredAy + alpha * (event.values[1] - filteredAy)
 
-        // X → horizontal; Y → vertical (negated: screen Y grows downward).
-        var tx = ax * movementScale
-        var ty = -ay * movementScale
+        // Map tilt to incremental position change (Real-Time Continuous Movement)
+        ballX -= filteredAx * sensitivity
+        ballY -= filteredAy * sensitivity
 
         if (maxOffsetX <= 0f || maxOffsetY <= 0f) {
             updateMovementBounds()
         }
 
-        tx = tx.coerceIn(-maxOffsetX, maxOffsetX)
-        ty = ty.coerceIn(-maxOffsetY, maxOffsetY)
+        // Apply boundaries to prevent the ball from moving off-screen
+        ballX = ballX.coerceIn(-maxOffsetX, maxOffsetX)
+        ballY = ballY.coerceIn(-maxOffsetY, maxOffsetY)
 
-        ball.translationX = tx
-        ball.translationY = ty
+        // Update UI immediately
+        ball.translationX = ballX
+        ball.translationY = ballY
     }
 
-    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
+        // Not needed for this implementation but required by SensorEventListener
+    }
 
     private fun updateMovementBounds() {
         val wArea = movementArea.width
@@ -113,7 +145,10 @@ class MainActivity : AppCompatActivity(), SensorEventListener {
         if (maxOffsetX < 0f) maxOffsetX = 0f
         if (maxOffsetY < 0f) maxOffsetY = 0f
 
-        ball.translationX = ball.translationX.coerceIn(-maxOffsetX, maxOffsetX)
-        ball.translationY = ball.translationY.coerceIn(-maxOffsetY, maxOffsetY)
+        // Re-clamp position if bounds change (e.g. screen rotation or layout changes)
+        ballX = ballX.coerceIn(-maxOffsetX, maxOffsetX)
+        ballY = ballY.coerceIn(-maxOffsetY, maxOffsetY)
+        ball.translationX = ballX
+        ball.translationY = ballY
     }
 }
